@@ -96,9 +96,23 @@ class RawShardStream(IterableDataset):
     def __iter__(self):
         buf, seen = [], 0
         for s in self.ds:
-            txt = s["text"].strip()
+            # Try to find the text content in various possible columns
+            txt = None
+            for key in ["text", "problem", "question", "input", "query", "content"]:
+                if key in s and s[key]:
+                    txt = str(s[key]).strip()
+                    break
+            
+            if not txt:
+                # Fallback: find the first non-empty string column
+                for k, v in s.items():
+                    if isinstance(v, str) and v.strip():
+                        txt = v.strip()
+                        break
+            
             if not txt:
                 continue
+                
             seen += len(txt.encode())
             buf.extend(self.tok(txt, add_special_tokens=False).input_ids)
             while len(buf) >= self.S:
