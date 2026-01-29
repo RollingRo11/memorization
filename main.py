@@ -75,17 +75,34 @@ def main():
     math_dir.mkdir(parents=True, exist_ok=True)
     
     # --- Step 1: Collect General Factors ---
-    # Check if we already have factors for the requested blocks
-    # Simplistic check: look for any .pt file with the block number
-    need_gen = args.force_collect
+    # Robust check: Ensure ALL requested blocks are present in the existing files
+    target_blocks_int = set(int(b) for b in args.target_blocks)
+    
+    def check_missing_blocks(directory, required_blocks):
+        if not directory.exists():
+            return required_blocks
+        
+        covered_blocks = set()
+        for f in directory.glob("*.pt"):
+            try:
+                # Filename format: kfac_factors_blk_28_29_30_31.pt
+                parts = f.stem.split("blk_")[-1].split("_")
+                for p in parts:
+                    if p.isdigit():
+                        covered_blocks.add(int(p))
+            except Exception:
+                continue
+        
+        return required_blocks - covered_blocks
+
+    missing_gen = check_missing_blocks(gen_dir, target_blocks_int)
+    need_gen = args.force_collect or bool(missing_gen)
+    
     if not need_gen:
-        # If any block is missing a corresponding file, re-run
-        # This is a loose check; a robust one would parse the filenames strictly
-        existing = list(gen_dir.glob("*.pt"))
-        if not existing:
-            need_gen = True
-        else:
-            print(f"Found {len(existing)} general factor files in {gen_dir}, skipping collection.")
+        print(f"Found factors for all requested blocks in {gen_dir}, skipping collection.")
+    else:
+        if missing_gen and not args.force_collect:
+            print(f"Missing general factors for blocks: {missing_gen}. Starting collection...")
 
     if need_gen:
         cmd_gen = [
@@ -100,13 +117,14 @@ def main():
         run_command(cmd_gen, "Collect General Factors")
 
     # --- Step 2: Collect Math Factors ---
-    need_math = args.force_collect
+    missing_math = check_missing_blocks(math_dir, target_blocks_int)
+    need_math = args.force_collect or bool(missing_math)
+    
     if not need_math:
-        existing = list(math_dir.glob("*.pt"))
-        if not existing:
-            need_math = True
-        else:
-            print(f"Found {len(existing)} math factor files in {math_dir}, skipping collection.")
+        print(f"Found factors for all requested blocks in {math_dir}, skipping collection.")
+    else:
+        if missing_math and not args.force_collect:
+            print(f"Missing math factors for blocks: {missing_math}. Starting collection...")
 
     if need_math:
         cmd_math = [
