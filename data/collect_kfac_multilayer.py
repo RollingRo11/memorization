@@ -68,7 +68,7 @@ class RawShardStream(IterableDataset):
                 streaming=True,
             )
         else:
-            # Local file or other path
+            # Local file or arbitrary HF dataset name
             import os
             if os.path.exists(corpus):
                 self.ds = load_dataset(
@@ -78,14 +78,20 @@ class RawShardStream(IterableDataset):
                     streaming=True,
                 )
             else:
-                # Fallback or error? Let's assume it might be a valid HF dataset we don't have in our dict
-                print(f"Warning: Corpus {corpus} not in known HF list and file not found locally. Trying to load as path anyway.")
-                self.ds = load_dataset(
-                    "json",
-                    data_files={"train": corpus},
-                    split="train",
-                    streaming=True,
-                )
+                # Try loading as a standard HF dataset name (hub)
+                print(f"Loading {corpus} from Hugging Face Hub...")
+                try:
+                    # Try loading as a standard dataset first
+                    self.ds = load_dataset(corpus, split="train", streaming=True)
+                except Exception as e:
+                    # Fallback to assuming it's a URL to a JSON file
+                    print(f"Standard load failed ({e}), trying as JSON path...")
+                    self.ds = load_dataset(
+                        "json",
+                        data_files={"train": corpus},
+                        split="train",
+                        streaming=True,
+                    )
 
     def __iter__(self):
         buf, seen = [], 0

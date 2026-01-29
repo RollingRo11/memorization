@@ -76,8 +76,29 @@ KFAC_FACTORS_7B = {
 }
 
 
-def get_kfac_factors_path(model_size: str, layer_idx: int) -> str:
+def get_kfac_factors_path(model_size: str, layer_idx: int, general_factors_dir: str = "") -> str:
     """Get K-FAC factors path for given model size and layer."""
+    
+    # 1. Dynamic lookup in user-provided directory
+    if general_factors_dir:
+        root = Path(general_factors_dir)
+        if not root.exists():
+            raise ValueError(f"General factors dir does not exist: {root}")
+            
+        # Scan for files like kfac_factors_blk_X_Y_Z.pt
+        for f in root.glob("kfac_factors_blk_*.pt"):
+            try:
+                # Extract numbers from filename
+                stem = f.stem  # e.g., kfac_factors_blk_28_29_30_31
+                parts = stem.split("blk_")[-1].split("_")
+                layers = [int(p) for p in parts if p.isdigit()]
+                if layer_idx in layers:
+                    return str(f.resolve())
+            except Exception:
+                continue
+        raise ValueError(f"Could not find K-FAC file for layer {layer_idx} in {general_factors_dir}")
+
+    # 2. Hardcoded fallback
     factors = KFAC_FACTORS_1B if model_size == "1b" else KFAC_FACTORS_7B
     for layers, rel_path in factors.items():
         if layer_idx in layers:
@@ -159,9 +180,10 @@ def apply_kfac_to_layer(model,
                        refresh_cache: bool = False,
                        quiet: bool = True,
                        math_factors_path: str = "",
-                       alpha: float = 0.0) -> None:
+                       alpha: float = 0.0,
+                       general_factors_dir: str = "") -> None:
     """Apply K-FAC to a single layer's MLP projections."""
-    factors_path = get_kfac_factors_path(model_size, layer_idx)
+    factors_path = get_kfac_factors_path(model_size, layer_idx, general_factors_dir)
     
     # Resolve math factors path
     resolved_math_path = None
@@ -277,6 +299,8 @@ def main():
     # Math whitelist settings
     parser.add_argument("--math-factors-path", type=str, default="",
                        help="Path to math domain K-FAC factors (file or directory) to mix in")
+    parser.add_argument("--general-factors-dir", type=str, default="",
+                       help="Override: Path to directory containing general K-FAC factors")
     parser.add_argument("--alpha", type=float, default=0.0,
                        help="Mixing coefficient for math factors: combined = general + alpha * math")
 
@@ -410,6 +434,7 @@ def main():
                 refresh_cache=args.refresh_cache,
                 math_factors_path=args.math_factors_path,
                 alpha=args.alpha,
+                general_factors_dir=args.general_factors_dir,
             )
 
     # POST-K-FAC EVALUATION
