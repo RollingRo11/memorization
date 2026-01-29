@@ -51,13 +51,14 @@ def main():
     
     # Pipeline config
     parser.add_argument("--output-dir", default="data/kfac_factors", help="Base dir for factors")
-    parser.add_argument("--target-blocks", nargs="+", default=["31"], help="List of block indices to process")
+    parser.add_argument("--target-blocks", nargs="+", default=["23", "24", "25"], help="List of block indices to process")
+    parser.add_argument("--projections", nargs="+", default=["gate", "up"], help="MLP projections to edit (gate/up/down)")
     parser.add_argument("--layers-per-pass", default="4", help="Layers to collect per pass")
     parser.add_argument("--force-collect", action="store_true", help="Force re-collection of factors")
     
     # Mixing / Edit config
     parser.add_argument("--alpha", type=float, default=1.0, help="Mixing strength for math factors")
-    parser.add_argument("--variance", type=float, default=0.8, help="Curvature mass to retain (rho)")
+    parser.add_argument("--variance", type=float, default=0.6, help="Curvature mass to retain (rho)")
     
     args = parser.parse_args()
     
@@ -125,11 +126,7 @@ def main():
     # e.g. {"31": {"gate": 0.8, "up": 0.8, "down": 0.8}}
     layers_config = {}
     for b in args.target_blocks:
-        layers_config[b] = {
-            "gate": args.variance,
-            "up": args.variance,
-            "down": args.variance
-        }
+        layers_config[b] = {p: args.variance for p in args.projections}
     layers_json = json.dumps(layers_config)
     
     cmd_eval = [
