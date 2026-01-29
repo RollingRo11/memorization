@@ -38,9 +38,13 @@ class CachedTextChunkDataset(Dataset):
         cache_root = pathlib.Path(cache_dir) if cache_dir else pathlib.Path(os.path.dirname(__file__)) / "data"
         os.makedirs(cache_root, exist_ok=True)
         tok_name = getattr(tokenizer, "name_or_path", tokenizer.__class__.__name__)
-        key = f"{path.name}::{tok_name}::{seq_len}::{max_tokens}"
+        
+        is_local = os.path.exists(filepath)
+        stem_name = path.stem if is_local else filepath.replace("/", "__")
+        
+        key = f"{filepath}::{tok_name}::{seq_len}::{max_tokens}"
         cache_hash = hashlib.md5(key.encode("utf-8")).hexdigest()[:8]
-        cache_file = cache_root / f"tok_cache_{path.stem}_{cache_hash}.pt"
+        cache_file = cache_root / f"tok_cache_{stem_name}_{cache_hash}.pt"
 
         if cache_file.exists():
             tensor = torch.load(cache_file, map_location="cpu")
@@ -51,13 +55,33 @@ class CachedTextChunkDataset(Dataset):
                 print(f"Loaded token cache: {cache_file}")
         else:
             tokens: List[int] = []
-            with path.open("r", encoding="utf-8", errors="ignore") as fp:
-                for line in fp:
-                    ids = tokenizer.encode(line, add_special_tokens=False)
-                    tokens.extend(ids)
-                    if max_tokens and len(tokens) >= max_tokens:
-                        tokens = tokens[:max_tokens]
-                        break
+            if is_local:
+                with path.open("r", encoding="utf-8", errors="ignore") as fp:
+                    for line in fp:
+                        ids = tokenizer.encode(line, add_special_tokens=False)
+                        tokens.extend(ids)
+                        if max_tokens and len(tokens) >= max_tokens:
+                            tokens = tokens[:max_tokens]
+                            break
+            else:
+                # HF Dataset loader
+                from datasets import load_dataset
+                if verbose:
+                    print(f"Tokenizing from HF dataset: {filepath}")
+                ds = load_dataset(filepath, split="train", streaming=True)
+                for sample in ds:
+                    txt = None
+                    for k in ["text", "content", "document"]:
+                        if k in sample:
+                            txt = sample[k]
+                            break
+                    if txt:
+                        ids = tokenizer.encode(txt, add_special_tokens=False)
+                        tokens.extend(ids)
+                        if max_tokens and len(tokens) >= max_tokens:
+                            tokens = tokens[:max_tokens]
+                            break
+                            
             torch.save(torch.tensor(tokens, dtype=torch.long), cache_file)
             if verbose:
                 print(f"Saved token cache: {cache_file}")

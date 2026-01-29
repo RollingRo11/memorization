@@ -48,10 +48,35 @@ class TextChunkDataset(Dataset):
         self.seq_len = seq_len
         self.tokens = []
         
-        path = pathlib.Path(filepath)
-        with path.open("r", encoding="utf-8", errors="ignore") as fp:
-            with tqdm(desc=f"Tokenizing {path.name}") as bar:
-                for line in fp:
+        path_str = str(filepath)
+        if os.path.exists(path_str):
+            # Local file mode
+            path = pathlib.Path(filepath)
+            iterator = path.open("r", encoding="utf-8", errors="ignore")
+            close_iter = True
+        else:
+            # Hugging Face dataset mode
+            from datasets import load_dataset
+            print(f"Loading evaluation data from HF: {path_str}")
+            try:
+                ds = load_dataset(path_str, split="train", streaming=True)
+                # Create a generator that yields text from the dataset
+                def text_gen():
+                    for sample in ds:
+                        # Try common text keys
+                        for key in ["text", "content", "document"]:
+                            if key in sample:
+                                yield sample[key]
+                                break
+                iterator = text_gen()
+                close_iter = False
+            except Exception as e:
+                raise ValueError(f"Could not load data from {path_str} as local file or HF dataset: {e}")
+
+        try:
+            with tqdm(desc=f"Tokenizing {path_str}") as bar:
+                for line in iterator:
+                    if not line: continue
                     ids = tokenizer.encode(line, add_special_tokens=False)
                     self.tokens.extend(ids)
                     bar.update(len(ids))
@@ -59,6 +84,9 @@ class TextChunkDataset(Dataset):
                     if max_tokens and len(self.tokens) >= max_tokens:
                         self.tokens = self.tokens[:max_tokens]
                         break
+        finally:
+            if close_iter and hasattr(iterator, 'close'):
+                iterator.close()
         
         # Drop any ragged tail to have exact multiple of seq_len
         n_full = len(self.tokens) // seq_len
@@ -202,8 +230,12 @@ def get_baseline_predictions(model_name: str,
     """
     # Set default paths if not provided
     if data_path is None:
-        # Default to pile text in data subdirectory
-        data_path = os.path.join(os.path.dirname(__file__), "pile10k_None.txt")
+        # Check for local file first, otherwise use HF dataset
+        local_default = os.path.join(os.path.dirname(__file__), "pile10k_None.txt")
+        if os.path.exists(local_default):
+            data_path = local_default
+        else:
+            data_path = "NeelNanda/pile-10k"
     
     if cache_dir is None:
         # Default cache directory in evaluation_toolkit
