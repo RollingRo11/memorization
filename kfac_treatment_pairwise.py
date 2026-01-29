@@ -30,7 +30,8 @@ class KFACTreatment:
     """
     
     def __init__(self, model, layer_names: List[str], kfac_factors_path: str, 
-                 device: Optional[str] = None, keep_eigenvectors_on_cpu: bool = False):
+                 device: Optional[str] = None, keep_eigenvectors_on_cpu: bool = False,
+                 math_factors_path: Optional[str] = None, alpha: float = 1.0):
         """
         Initialize K-FAC treatment.
         
@@ -40,14 +41,24 @@ class KFACTreatment:
             kfac_factors_path: Path to the saved K-FAC factors file
             device: Device to use for computations (defaults to model device)
             keep_eigenvectors_on_cpu: If True, store eigenvectors on CPU to save GPU memory
+            math_factors_path: Optional path to domain-specific (math) K-FAC factors
+            alpha: Mixing coefficient for math factors (A_combined = A + alpha * A_math)
         """
         self.model = model
         self.layer_names = layer_names
         self.device = device or next(model.parameters()).device
         self.keep_eigenvectors_on_cpu = keep_eigenvectors_on_cpu
+        self.alpha = alpha
         
         # Load K-FAC factors
         self.kfac_data = torch.load(kfac_factors_path, map_location='cpu')
+        
+        # Load Math factors if provided
+        if math_factors_path:
+            print(f"Loading math factors from {math_factors_path} with alpha={alpha}")
+            self.math_data = torch.load(math_factors_path, map_location='cpu')
+        else:
+            self.math_data = None
         
         # Store original weights
         self.original_weights = {}
@@ -127,6 +138,26 @@ class KFACTreatment:
         A = kfac_layer_data['A'].float().to(device)
         G = kfac_layer_data['G'].float().to(device)
         
+        # Mix with math factors if available
+        if self.math_data:
+            kfac_key = self._get_kfac_key(layer_name)
+            if kfac_key in self.math_data:
+                math_layer_data = self.math_data[kfac_key]
+                A_math = math_layer_data['A'].float().to(device)
+                G_math = math_layer_data['G'].float().to(device)
+                
+                # Check shapes
+                if A_math.shape != A.shape:
+                    print(f"Warning: Shape mismatch for A in {layer_name}. General: {A.shape}, Math: {A_math.shape}. Skipping math mix.")
+                elif G_math.shape != G.shape:
+                    print(f"Warning: Shape mismatch for G in {layer_name}. General: {G.shape}, Math: {G_math.shape}. Skipping math mix.")
+                else:
+                    print(f"  Mixing math stats for {layer_name} (alpha={self.alpha})")
+                    A.add_(A_math, alpha=self.alpha)
+                    G.add_(G_math, alpha=self.alpha)
+            else:
+                print(f"Warning: {kfac_key} not found in math factors. Skipping math mix.")
+
         # Compute eigenvalues and eigenvectors
         eva_A, evc_A = torch.linalg.eigh(A)
         eva_G, evc_G = torch.linalg.eigh(G)

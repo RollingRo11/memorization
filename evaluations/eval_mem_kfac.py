@@ -157,9 +157,33 @@ def apply_kfac_to_layer(model,
                        variance_down: float,
                        use_cache: bool = True,
                        refresh_cache: bool = False,
-                       quiet: bool = True) -> None:
+                       quiet: bool = True,
+                       math_factors_path: str = "",
+                       alpha: float = 0.0) -> None:
     """Apply K-FAC to a single layer's MLP projections."""
     factors_path = get_kfac_factors_path(model_size, layer_idx)
+    
+    # Resolve math factors path
+    resolved_math_path = None
+    if math_factors_path:
+        mp = Path(math_factors_path)
+        if mp.is_file():
+            resolved_math_path = str(mp)
+        elif mp.is_dir():
+            # Try to match the filename of the general factors
+            filename = Path(factors_path).name
+            candidate = mp / filename
+            # Also try looking in subdirectories if the structure mirrors
+            # (e.g. general is in olmo2_7b/..., user provided root of math)
+            if candidate.exists():
+                resolved_math_path = str(candidate)
+            else:
+                # Try simple filename search in the directory
+                found = list(mp.rglob(filename))
+                if found:
+                    resolved_math_path = str(found[0])
+                else:
+                    print(f"Warning: Could not find math factors file '{filename}' in {math_factors_path}")
 
     # Get layer references
     layer = model.model.layers[layer_idx]
@@ -178,11 +202,17 @@ def apply_kfac_to_layer(model,
             print(f"  K-FAC {proj_name}_proj (ρ={variance:.3f}): skipping (ρ≈1.0)")
             continue
 
-        # Check cache
+        # Check cache (update cache key to include alpha if non-zero)
+        cache_key_suffix = ""
+        if alpha > 0 and resolved_math_path:
+            # We should probably invalidate cache if mixing math, or include alpha in filename
+            # For simplicity, append alpha
+            cache_key_suffix = f"__alpha{_rho_to_str(alpha)}"
+
         if use_cache and not refresh_cache:
             cache_path = CACHE_DIR / (
                 f"{_sanitize_filename_component(model_name)}__L{layer_idx}__{proj_name}"
-                f"__rho{_rho_to_str(variance)}__{proj_layer.weight.dtype.__str__()}.pt"
+                f"__rho{_rho_to_str(variance)}{cache_key_suffix}__{proj_layer.weight.dtype.__str__()}.pt"
             )
             if cache_path.exists():
                 with torch.no_grad():
@@ -198,6 +228,8 @@ def apply_kfac_to_layer(model,
             layer_names=[layer_name],
             kfac_factors_path=factors_path,
             device=proj_layer.weight.device,
+            math_factors_path=resolved_math_path,
+            alpha=alpha
         )
         kfac.apply_kfac_by_product(variance_ratio=variance)
         # Report how many eigenvectors from G and A were retained
@@ -216,7 +248,7 @@ def apply_kfac_to_layer(model,
             os.makedirs(CACHE_DIR, exist_ok=True)
             cache_path = CACHE_DIR / (
                 f"{_sanitize_filename_component(model_name)}__L{layer_idx}__{proj_name}"
-                f"__rho{_rho_to_str(variance)}__{proj_layer.weight.dtype.__str__()}.pt"
+                f"__rho{_rho_to_str(variance)}{cache_key_suffix}__{proj_layer.weight.dtype.__str__()}.pt"
             )
             torch.save(proj_layer.weight.detach().cpu(), cache_path)
 
@@ -241,6 +273,12 @@ def main():
                        help="Use cached K-FAC weights if available")
     parser.add_argument("--refresh-cache", action="store_true",
                        help="Recompute and overwrite cached weights")
+    
+    # Math whitelist settings
+    parser.add_argument("--math-factors-path", type=str, default="",
+                       help="Path to math domain K-FAC factors (file or directory) to mix in")
+    parser.add_argument("--alpha", type=float, default=0.0,
+                       help="Mixing coefficient for math factors: combined = general + alpha * math")
 
     # Evaluation settings
     parser.add_argument("--dtype", type=str, choices=["float16", "bfloat16", "float32"],
@@ -370,6 +408,8 @@ def main():
                 variance_down=variances["down"],
                 use_cache=args.use_cache,
                 refresh_cache=args.refresh_cache,
+                math_factors_path=args.math_factors_path,
+                alpha=args.alpha,
             )
 
     # POST-K-FAC EVALUATION

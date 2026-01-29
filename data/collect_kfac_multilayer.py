@@ -22,7 +22,7 @@ def parse():
     p.add_argument("--dtype",  default="bfloat16",
                    choices=["float32", "bfloat16"])
 
-    p.add_argument("--corpus",  choices=["olmo", "dolmo"], default="dolmo")
+    p.add_argument("--corpus", default="dolmo", help="HF dataset ('olmo', 'dolmo') or path to jsonl")
     p.add_argument("--nbytes", type=int, default=100_000_000)
     p.add_argument("--seq_len",          type=int, default=512)
     p.add_argument("--batch_size",       type=int, default=32)
@@ -59,7 +59,7 @@ class RawShardStream(IterableDataset):
                 streaming=True,
                 features=Features({"text": Value("string")}),
             )
-        else:  # dolmo  →  accept full, wide schema (no `features=` arg)
+        elif corpus in self.HF:  # dolmo  →  accept full, wide schema (no `features=` arg)
             self.ds = load_dataset(
                 "json",
                 data_files={"train":
@@ -67,6 +67,25 @@ class RawShardStream(IterableDataset):
                 split="train",
                 streaming=True,
             )
+        else:
+            # Local file or other path
+            import os
+            if os.path.exists(corpus):
+                self.ds = load_dataset(
+                    "json",
+                    data_files={"train": corpus},
+                    split="train",
+                    streaming=True,
+                )
+            else:
+                # Fallback or error? Let's assume it might be a valid HF dataset we don't have in our dict
+                print(f"Warning: Corpus {corpus} not in known HF list and file not found locally. Trying to load as path anyway.")
+                self.ds = load_dataset(
+                    "json",
+                    data_files={"train": corpus},
+                    split="train",
+                    streaming=True,
+                )
 
     def __iter__(self):
         buf, seen = [], 0
