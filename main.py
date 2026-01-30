@@ -59,6 +59,7 @@ def main():
     # Mixing / Edit config
     parser.add_argument("--alpha", type=float, default=1.0, help="Mixing strength for math factors")
     parser.add_argument("--variance", type=float, default=0.6, help="Curvature mass to retain (rho)")
+    parser.add_argument("--run-gsm8k", action="store_true", help="Run 3-way GSM8K comparison (Base vs Gen vs Union)")
     
     args = parser.parse_args()
     
@@ -74,6 +75,15 @@ def main():
     gen_dir.mkdir(parents=True, exist_ok=True)
     math_dir.mkdir(parents=True, exist_ok=True)
     
+    # --- Helper to define layers config ---
+    def get_layer_json(variance):
+        cfg = {}
+        for b in args.target_blocks:
+            cfg[b] = {p: variance for p in args.projections}
+        return json.dumps(cfg)
+    
+    layers_json = get_layer_json(args.variance)
+
     # --- Step 1: Collect General Factors ---
     # Robust check: Ensure ALL requested blocks are present in the existing files
     target_blocks_int = set(int(b) for b in args.target_blocks)
@@ -138,14 +148,7 @@ def main():
         ]
         run_command(cmd_math, "Collect Math Factors")
 
-    # --- Step 3: Eval with Hessian Union ---
-    
-    # Construct layers-json config
-    # e.g. {"31": {"gate": 0.8, "up": 0.8, "down": 0.8}}
-    layers_config = {}
-    for b in args.target_blocks:
-        layers_config[b] = {p: args.variance for p in args.projections}
-    layers_json = json.dumps(layers_config)
+    # --- Step 3: Eval with Hessian Union (The "Union" Model) ---
     
     cmd_eval = [
         sys.executable, "evaluations/eval_mem_kfac.py",
@@ -158,6 +161,85 @@ def main():
     ]
     
     run_command(cmd_eval, f"Apply Hessian Union (alpha={args.alpha}) & Evaluate")
+
+    # --- Step 4: Optional GSM8K Comparison ---
+    if args.run_gsm8k:
+        print("\n" + "="*60)
+        print("STARTING GSM8K 3-WAY COMPARISON")
+        print("="*60 + "\n")
+
+        # Define model paths
+        # Note: eval_mem_kfac saves models to data/models_kfac/{size}/{model_name}/{layer_cfg}/
+        # We need to predictably find them. The layer_cfg tag is non-trivial to reconstruct perfectly
+        # so we will look for the most recently modified .pt file in the expected dir.
+        
+        models_root = Path("data/models_kfac") / args.model_size / model_safe
+        
+        def find_latest_checkpoint():
+            # Find the latest .pt file in the models directory (recursive)
+            pts = list(models_root.rglob(f"{model_safe}.pt"))
+            if not pts: return None
+            return max(pts, key=lambda f: f.stat().st_mtime)
+
+        # 1. Base Model
+        run_command([
+            sys.executable, "evaluations/eval_gsm8k.py",
+            "--model", args.model,
+            "--device", args.device
+        ], "Eval Base Model on GSM8K")
+
+        # 2. General-Only Model (Alpha=0.0)
+        # We need to run eval_mem_kfac specifically to generate this checkpoint
+        # We use --skip-baseline to speed it up
+        print("Generating General-Only (Alpha=0) Model...")
+        cmd_gen_only = [
+            sys.executable, "evaluations/eval_mem_kfac.py",
+            "--model-size", args.model_size,
+            "--layers-json", layers_json,
+            "--general-factors-dir", str(gen_dir),
+            "--math-factors-path", str(math_dir),
+            "--alpha", "0.0",
+            "--use-cache",
+            "--skip-baseline"
+        ]
+        # We define a custom results tag so we don't pollute main logs
+        cmd_gen_only += ["--results-tag", "gen_only_temp"]
+        run_command(cmd_gen_only, "Generate General-Only Model")
+        
+        ckpt_gen = find_latest_checkpoint()
+        if ckpt_gen:
+            run_command([
+                sys.executable, "evaluations/eval_gsm8k.py",
+                "--model", args.model,
+                "--checkpoint", str(ckpt_gen),
+                "--device", args.device
+            ], "Eval General-Only Model on GSM8K")
+        else:
+            print("Error: Could not find General-Only checkpoint.")
+
+        # 3. Union Model (Already generated in Step 3)
+        # We need to re-run eval_mem_kfac just to touch the file or we rely on finding it?
+        # Better to re-generate it to be sure we pick up the right one, 
+        # or we could have captured it from Step 3. 
+        # For simplicity, we assume Step 3 was the LAST run, so find_latest works.
+        # But wait! We just ran Gen-Only, so THAT is the latest.
+        # So we actually need to re-run the Union generation (Step 3 logic) briefly or 
+        # ideally we should have saved the path. 
+        
+        # Let's just re-run the Union application (it's fast with cache) to ensure it's the latest file
+        print("Restoring Union Model...")
+        run_command(cmd_eval + ["--skip-baseline", "--results-tag", "union_temp"], "Restore Union Model")
+        
+        ckpt_union = find_latest_checkpoint()
+        if ckpt_union:
+             run_command([
+                sys.executable, "evaluations/eval_gsm8k.py",
+                "--model", args.model,
+                "--checkpoint", str(ckpt_union),
+                "--device", args.device
+            ], f"Eval Union Model (alpha={args.alpha}) on GSM8K")
+        else:
+             print("Error: Could not find Union checkpoint.")
 
     print("\n✓ Pipeline completed successfully.")
 
