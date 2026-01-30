@@ -68,49 +68,28 @@ def main():
         limit=args.limit
     )
 
-        # Extract score
-
-        try:
-
-            task_res = results["results"]["gsm8k"]
-
-            # Try common keys
-
-            if "acc,none" in task_res:
-
-                score = task_res["acc,none"]
-
-            elif "exact_match,none" in task_res:
-
-                score = task_res["exact_match,none"]
-
-            elif "acc" in task_res:
-
-                score = task_res["acc"]
-
-            elif "exact_match" in task_res:
-
-                score = task_res["exact_match"]
-
-            else:
-
-                print(f"Warning: Could not find accuracy key. Available keys: {list(task_res.keys())}")
-
-                score = 0.0
-
-        except Exception as e:
-
-            print(f"Error extracting score: {e}")
-
+    # Extract score
+    try:
+        task_res = results["results"]["gsm8k"]
+        # Try common keys
+        if "acc,none" in task_res:
+            score = task_res["acc,none"]
+        elif "exact_match,none" in task_res:
+            score = task_res["exact_match,none"]
+        elif "acc" in task_res:
+            score = task_res["acc"]
+        elif "exact_match" in task_res:
+            score = task_res["exact_match"]
+        else:
+            print(f"Warning: Could not find accuracy key. Available keys: {list(task_res.keys())}")
             score = 0.0
-
-            
-
-        print(f"\n{'='*40}")
-
-        print(f"GSM8K Accuracy: {score:.2%}")
-
-        print(f"{'='*40}\n")
+    except Exception as e:
+        print(f"Error extracting score: {e}")
+        score = 0.0
+        
+    print(f"\n{'='*40}")
+    print(f"GSM8K Accuracy: {score:.2%}")
+    print(f"{'='*40}\n")
     
     if args.output_file:
         with open(args.output_file, "w") as f:
