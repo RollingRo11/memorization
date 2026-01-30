@@ -81,17 +81,31 @@ class RawShardStream(IterableDataset):
                 # Try loading as a standard HF dataset name (hub)
                 print(f"Loading {corpus} from Hugging Face Hub...")
                 try:
-                    # Try loading as a standard dataset first
-                    self.ds = load_dataset(corpus, split="train", streaming=True)
-                except Exception as e:
-                    # Fallback to assuming it's a URL to a JSON file
-                    print(f"Standard load failed ({e}), trying as JSON path...")
-                    self.ds = load_dataset(
-                        "json",
-                        data_files={"train": corpus},
-                        split="train",
-                        streaming=True,
-                    )
+                    # Support "dataset,config" syntax
+                    if "," in corpus:
+                        name, config = corpus.split(",", 1)
+                        self.ds = load_dataset(name, config, split="train", streaming=True)
+                    else:
+                        self.ds = load_dataset(corpus, split="train", streaming=True)
+                except Exception as e1:
+                    # Retry with "main" config if it failed due to missing config
+                    if "Config name is missing" in str(e1):
+                        print(f"Config missing, trying '{corpus}' with config='main'...")
+                        try:
+                            self.ds = load_dataset(corpus, "main", split="train", streaming=True)
+                        except Exception as e2:
+                             print(f"Failed with 'main' config: {e2}")
+                             # Propagate original error or fallback to JSON
+                             raise e1
+                    else:
+                        # Fallback to assuming it's a URL to a JSON file
+                        print(f"Standard load failed ({e1}), trying as JSON path...")
+                        self.ds = load_dataset(
+                            "json",
+                            data_files={"train": corpus},
+                            split="train",
+                            streaming=True,
+                        )
 
     def __iter__(self):
         buf, seen = [], 0
