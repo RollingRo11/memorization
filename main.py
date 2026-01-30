@@ -175,11 +175,28 @@ def main():
         
         models_root = Path("data/models_kfac") / args.model_size / model_safe
         
-        def find_latest_checkpoint():
-            # Find the latest .pt file in the models directory (recursive)
-            pts = list(models_root.rglob(f"{model_safe}.pt"))
-            if not pts: return None
-            return max(pts, key=lambda f: f.stat().st_mtime)
+        def find_checkpoint(target_alpha):
+            # Look for directories ending with _alpha{target_alpha}
+            alpha_tag = f"_alpha{target_alpha}"
+            # The structure is models_kfac/{size}/{model}/{layer_tag}/model.pt
+            # We iterate over subdirs of models_root
+            if not models_root.exists():
+                return None
+            
+            # Find dir matching alpha
+            candidates = []
+            for d in models_root.iterdir():
+                if d.is_dir() and str(d).endswith(str(target_alpha)): # Simple suffix check might be risky with floats like 1.0 vs 0.0
+                    # Better check: check if alpha_tag is in the name
+                    if alpha_tag in d.name:
+                        candidates.append(d)
+            
+            if not candidates:
+                return None
+            
+            # If multiple (maybe from different variance runs), pick the latest
+            best_dir = max(candidates, key=lambda d: d.stat().st_mtime)
+            return best_dir / f"{model_safe}.pt"
 
         # 1. Base Model
         run_command([
@@ -206,7 +223,7 @@ def main():
         cmd_gen_only += ["--results-tag", "gen_only_temp"]
         run_command(cmd_gen_only, "Generate General-Only Model")
         
-        ckpt_gen = find_latest_checkpoint()
+        ckpt_gen = find_checkpoint(0.0)
         if ckpt_gen:
             run_command([
                 sys.executable, "evaluations/eval_gsm8k.py",
@@ -218,19 +235,8 @@ def main():
             print("Error: Could not find General-Only checkpoint.")
 
         # 3. Union Model (Already generated in Step 3)
-        # We need to re-run eval_mem_kfac just to touch the file or we rely on finding it?
-        # Better to re-generate it to be sure we pick up the right one, 
-        # or we could have captured it from Step 3. 
-        # For simplicity, we assume Step 3 was the LAST run, so find_latest works.
-        # But wait! We just ran Gen-Only, so THAT is the latest.
-        # So we actually need to re-run the Union generation (Step 3 logic) briefly or 
-        # ideally we should have saved the path. 
-        
-        # Let's just re-run the Union application (it's fast with cache) to ensure it's the latest file
-        print("Restoring Union Model...")
-        run_command(cmd_eval + ["--skip-baseline", "--results-tag", "union_temp"], "Restore Union Model")
-        
-        ckpt_union = find_latest_checkpoint()
+        # We assume Step 3 ran with args.alpha.
+        ckpt_union = find_checkpoint(args.alpha)
         if ckpt_union:
              run_command([
                 sys.executable, "evaluations/eval_gsm8k.py",

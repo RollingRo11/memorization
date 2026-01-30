@@ -494,7 +494,11 @@ def main():
     safe_model = model_name.replace("/", "__")
     edited_root = DATA_PATHS.MODELS_KFAC_DIR
     layer_cfg_tag = ''.join(ch if ch.isalnum() or ch in ('-', '_') else '_' for ch in json.dumps(layer_to_variances, sort_keys=True)) or "no_layers"
-    save_dir = os.path.join(edited_root, args.model_size, safe_model, layer_cfg_tag)
+    
+    # Append alpha to tag to avoid overwriting different mixings
+    alpha_tag = f"_alpha{args.alpha}"
+    save_dir = os.path.join(edited_root, args.model_size, safe_model, layer_cfg_tag + alpha_tag)
+    
     os.makedirs(save_dir, exist_ok=True)
     model_path = os.path.join(save_dir, f"{safe_model}.pt")
     torch.save({"model_state_dict": model.state_dict()}, model_path)

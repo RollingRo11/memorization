@@ -58,37 +58,49 @@ def main():
         print(f"Evaluating BASE model: {args.model}")
         lm_obj = HFLM(pretrained=args.model, device=args.device, batch_size=args.batch_size, dtype="bfloat16", trust_remote_code=True)
 
-    # Run GSM8K
-    print("Starting GSM8K evaluation...")
+    # Run GSM8K (Chain of Thought)
+    print("Starting GSM8K (CoT) evaluation...")
     results = evaluator.simple_evaluate(
         model=lm_obj,
-        tasks=["gsm8k"],
-        num_fewshot=5,  # Standard 5-shot for GSM8K
+        tasks=["gsm8k_cot"],  # Use CoT version
+        num_fewshot=5,
         batch_size=args.batch_size,
         limit=args.limit
     )
 
     # Extract score
     try:
-        task_res = results["results"]["gsm8k"]
-        # Try common keys
-        if "acc,none" in task_res:
-            score = task_res["acc,none"]
+        task_res = results["results"]["gsm8k_cot"]
+        
+        # Debug: Print keys to see what we got
+        # print(f"DEBUG: Available keys: {list(task_res.keys())}")
+        
+        if "exact_match,strict-match" in task_res:
+             score = task_res["exact_match,strict-match"]
+        elif "exact_match,flexible-extract" in task_res:
+             score = task_res["exact_match,flexible-extract"]
         elif "exact_match,none" in task_res:
             score = task_res["exact_match,none"]
-        elif "acc" in task_res:
-            score = task_res["acc"]
-        elif "exact_match" in task_res:
-            score = task_res["exact_match"]
+        elif "acc,none" in task_res:
+            score = task_res["acc,none"]
         else:
-            print(f"Warning: Could not find accuracy key. Available keys: {list(task_res.keys())}")
-            score = 0.0
+            # Fallback: look for any key with 'acc' or 'match'
+            found = False
+            for k, v in task_res.items():
+                if isinstance(v, (int, float)) and ("acc" in k or "match" in k):
+                    score = v
+                    print(f"Using fallback metric key: {k}")
+                    found = True
+                    break
+            if not found:
+                print(f"Warning: Could not find accuracy key. Available keys: {list(task_res.keys())}")
+                score = 0.0
     except Exception as e:
         print(f"Error extracting score: {e}")
         score = 0.0
         
     print(f"\n{'='*40}")
-    print(f"GSM8K Accuracy: {score:.2%}")
+    print(f"GSM8K (CoT) Accuracy: {score:.2%}")
     print(f"{'='*40}\n")
     
     if args.output_file:
