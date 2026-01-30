@@ -169,11 +169,8 @@ def main():
         print("="*60 + "\n")
 
         # Define model paths
-        # Note: eval_mem_kfac saves models to data/models_kfac/{size}/{model_name}/{layer_cfg}/
-        # We need to predictably find them. The layer_cfg tag is non-trivial to reconstruct perfectly
-        # so we will look for the most recently modified .pt file in the expected dir.
-        
-        models_root = Path("data/models_kfac") / args.model_size / model_safe
+        # Note: eval_mem_kfac saves models to edited_models/models_kfac/{size}/{model_name}/{layer_cfg}/
+        models_root = Path("edited_models/models_kfac") / args.model_size / model_safe
         
         def find_checkpoint(target_alpha):
             # Look for directories ending with _alpha{target_alpha}
