@@ -6,5 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "lm-eval>=0.4.10",
+    "torch>=2.10.0",
     "zstandard>=0.25.0",
 ]

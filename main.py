@@ -70,7 +70,10 @@ def main():
     # We create specific subdirs for general vs math factors
     # e.g. data/kfac_factors/allenai__OLMo-2-1124-7B_general
     gen_dir = base_dir / f"{model_safe}_general"
-    math_dir = base_dir / f"{model_safe}_math"
+    
+    # Make math dir specific to the corpus used
+    math_corpus_safe = args.math_corpus.replace("/", "__").replace(".", "_")
+    math_dir = base_dir / f"{model_safe}_{math_corpus_safe}"
     
     gen_dir.mkdir(parents=True, exist_ok=True)
     math_dir.mkdir(parents=True, exist_ok=True)
