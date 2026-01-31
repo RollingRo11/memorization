@@ -62,6 +62,7 @@ def main():
     parser.add_argument("--run-gsm8k", action="store_true", help="Run 3-way GSM8K comparison (Base vs Gen vs Union)")
     parser.add_argument("--skip-evals", action="store_true", help="Skip all evaluations (just apply K-FAC and save model)")
     parser.add_argument("--refresh-cache", action="store_true", help="Force refresh of K-FAC weight cache")
+    parser.add_argument("--eval-union-only", action="store_true", help="For GSM8K: Skip Base and General-Only models, evaluate only Union")
     
     args = parser.parse_args()
     
@@ -203,41 +204,42 @@ def main():
             best_dir = max(candidates, key=lambda d: d.stat().st_mtime)
             return best_dir / f"{model_safe}.pt"
 
-        # 1. Base Model
-        run_command([
-            sys.executable, "evaluations/eval_gsm8k.py",
-            "--model", args.model,
-            "--device", args.device
-        ], "Eval Base Model on GSM8K")
-
-        # 2. General-Only Model (Alpha=0.0)
-        # We need to run eval_mem_kfac specifically to generate this checkpoint
-        # We use --skip-baseline to speed it up
-        print("Generating General-Only (Alpha=0) Model...")
-        cmd_gen_only = [
-            sys.executable, "evaluations/eval_mem_kfac.py",
-            "--model-size", args.model_size,
-            "--layers-json", layers_json,
-            "--general-factors-dir", str(gen_dir),
-            "--math-factors-path", str(math_dir),
-            "--alpha", "0.0",
-            "--use-cache",
-            "--skip-baseline"
-        ]
-        # We define a custom results tag so we don't pollute main logs
-        cmd_gen_only += ["--results-tag", "gen_only_temp"]
-        run_command(cmd_gen_only, "Generate General-Only Model")
-        
-        ckpt_gen = find_checkpoint(0.0)
-        if ckpt_gen:
+        if not args.eval_union_only:
+            # 1. Base Model
             run_command([
                 sys.executable, "evaluations/eval_gsm8k.py",
                 "--model", args.model,
-                "--checkpoint", str(ckpt_gen),
                 "--device", args.device
-            ], "Eval General-Only Model on GSM8K")
-        else:
-            print("Error: Could not find General-Only checkpoint.")
+            ], "Eval Base Model on GSM8K")
+
+            # 2. General-Only Model (Alpha=0.0)
+            # We need to run eval_mem_kfac specifically to generate this checkpoint
+            # We use --skip-baseline to speed it up
+            print("Generating General-Only (Alpha=0) Model...")
+            cmd_gen_only = [
+                sys.executable, "evaluations/eval_mem_kfac.py",
+                "--model-size", args.model_size,
+                "--layers-json", layers_json,
+                "--general-factors-dir", str(gen_dir),
+                "--math-factors-path", str(math_dir),
+                "--alpha", "0.0",
+                "--use-cache",
+                "--skip-baseline"
+            ]
+            # We define a custom results tag so we don't pollute main logs
+            cmd_gen_only += ["--results-tag", "gen_only_temp"]
+            run_command(cmd_gen_only, "Generate General-Only Model")
+            
+            ckpt_gen = find_checkpoint(0.0)
+            if ckpt_gen:
+                run_command([
+                    sys.executable, "evaluations/eval_gsm8k.py",
+                    "--model", args.model,
+                    "--checkpoint", str(ckpt_gen),
+                    "--device", args.device
+                ], "Eval General-Only Model on GSM8K")
+            else:
+                print("Error: Could not find General-Only checkpoint.")
 
         # 3. Union Model (Already generated in Step 3)
         # We assume Step 3 ran with args.alpha.
