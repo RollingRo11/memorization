@@ -60,6 +60,7 @@ def main():
     parser.add_argument("--alpha", type=float, default=1.0, help="Mixing strength for math factors")
     parser.add_argument("--variance", type=float, default=0.6, help="Curvature mass to retain (rho)")
     parser.add_argument("--run-gsm8k", action="store_true", help="Run 3-way GSM8K comparison (Base vs Gen vs Union)")
+    parser.add_argument("--skip-evals", action="store_true", help="Skip all evaluations (just apply K-FAC and save model)")
     
     args = parser.parse_args()
     
