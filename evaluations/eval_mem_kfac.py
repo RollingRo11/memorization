@@ -224,11 +224,13 @@ def apply_kfac_to_layer(model,
             print(f"  K-FAC {proj_name}_proj (ρ={variance:.3f}): skipping (ρ≈1.0)")
             continue
 
-        # Check cache (update cache key to include alpha if non-zero)
+        # Check cache (update cache key to include alpha and math source if present)
         cache_key_suffix = ""
         if alpha > 0 and resolved_math_path:
-            # We should probably invalidate cache if mixing math, or include alpha in filename
-            # For simplicity, append alpha
+            # Include a short identifier for the math factors to avoid collisions
+            math_id = Path(resolved_math_path).parent.name # e.g. allenai__OLMo-2-1124-7B_gsm8k
+            cache_key_suffix = f"__alpha{_rho_to_str(alpha)}__{math_id}"
+        elif alpha > 0:
             cache_key_suffix = f"__alpha{_rho_to_str(alpha)}"
 
         if use_cache and not refresh_cache:

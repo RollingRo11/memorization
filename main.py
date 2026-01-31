@@ -61,6 +61,7 @@ def main():
     parser.add_argument("--variance", type=float, default=0.6, help="Curvature mass to retain (rho)")
     parser.add_argument("--run-gsm8k", action="store_true", help="Run 3-way GSM8K comparison (Base vs Gen vs Union)")
     parser.add_argument("--skip-evals", action="store_true", help="Skip all evaluations (just apply K-FAC and save model)")
+    parser.add_argument("--refresh-cache", action="store_true", help="Force refresh of K-FAC weight cache")
     
     args = parser.parse_args()
     
@@ -163,6 +164,9 @@ def main():
         "--alpha", str(args.alpha),
         "--use-cache"
     ]
+    
+    if args.refresh_cache:
+        cmd_eval.append("--refresh-cache")
     
     run_command(cmd_eval, f"Apply Hessian Union (alpha={args.alpha}) & Evaluate")
 
