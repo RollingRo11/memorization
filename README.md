@@ -1,6 +1,6 @@
 # K-FAC curvature edit
 
-Reproduce the K-FAC treatment and **Hessian Union** strategy used in our paper.
+Reproduce the K-FAC treatment (used in the paper) and **Hessian Union** strategy.
 
 - **Paper:** [From Memorization to Reasoning in the Spectrum of Loss Curvature](https://arxiv.org/abs/2510.24256)
 - **Blog:** [Understanding Memorization via Loss Curvature](https://goodfire-staging.webflow.io/research/understanding-memorization-via-loss-curvature)
