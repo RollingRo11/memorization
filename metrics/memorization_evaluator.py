@@ -46,7 +46,7 @@ MODEL_CONFIGS = {
         "num_layers": 16,
     },
     "7b": {
-        "model_name": "allenai/OLMo-2-1124-7B",
+        "model_name": "allenai/Olmo-3-7B-Think",
         # Use centralized 7B dolma validation split for memorization evals
         "dataset": DATA_PATHS.MEM_JSONL_7B_DOLMA_VAL,
         "quotes_dataset": DATA_PATHS.QUOTES_JSONL_7B,

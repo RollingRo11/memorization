@@ -9,7 +9,7 @@ One-command runner for the "Hessian Union" strategy:
 
 Usage:
     python main.py \
-        --model "allenai/OLMo-2-1124-7B" \
+        --model "allenai/Olmo-3-7B-Think" \
         --general-corpus dolmo \
         --math-corpus ./data/SimpleMath.jsonl \
         --alpha 1.0 \
@@ -41,7 +41,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run the full Hessian Union pipeline.")
     
     # Model config
-    parser.add_argument("--model", default="allenai/OLMo-2-1124-7B", help="Model HF path")
+    parser.add_argument("--model", default="allenai/Olmo-3-7B-Think", help="Model HF path")
     parser.add_argument("--model-size", default="7b", choices=["1b", "7b"], help="Short size code for eval script")
     parser.add_argument("--device", default="cuda", help="Device to use")
     

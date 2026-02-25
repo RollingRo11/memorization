@@ -11,7 +11,7 @@ Usage:
     
     # Will generate on first run, use cache on subsequent runs
     baseline_file = get_baseline_predictions(
-        model_name="allenai/OLMo-2-1124-7B",
+        model_name="allenai/Olmo-3-7B-Think",
         data_path="/path/to/pile10k_None.txt",
         cache_dir="/path/to/cache",
         k=10,
@@ -209,7 +209,7 @@ def get_baseline_predictions(model_name: str,
     Example:
         # First run - generates predictions
         baseline_file = get_baseline_predictions(
-            model_name="allenai/OLMo-2-1124-7B",
+            model_name="allenai/Olmo-3-7B-Think",
             data_path="/path/to/pile10k_None.txt",
             cache_dir="./cache",
             k=10,
@@ -221,7 +221,7 @@ def get_baseline_predictions(model_name: str,
         
         # With pre-loaded model (avoids loading twice)
         baseline_file = get_baseline_predictions(
-            model_name="allenai/OLMo-2-1124-7B",
+            model_name="allenai/Olmo-3-7B-Think",
             data_path="/path/to/pile10k_None.txt",
             cache_dir="./cache",
             model_instance=model,
@@ -315,7 +315,7 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Generate baseline top-k predictions")
-    parser.add_argument("--model", default="allenai/OLMo-2-1124-7B", 
+    parser.add_argument("--model", default="allenai/Olmo-3-7B-Think", 
                        help="Model name or path")
     parser.add_argument("--data", required=True,
                        help="Path to text data file")

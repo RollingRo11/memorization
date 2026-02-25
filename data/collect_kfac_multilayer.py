@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 # ---------- CLI ------------------------------------------------
 def parse():
     p = argparse.ArgumentParser()
-    p.add_argument("--model", default="allenai/OLMo-2-1124-7B")
+    p.add_argument("--model", default="allenai/Olmo-3-7B-Think")
     p.add_argument("--device", default="cuda")
     p.add_argument("--dtype",  default="bfloat16",
                    choices=["float32", "bfloat16"])
