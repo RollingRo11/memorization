@@ -579,3 +579,78 @@ class KFACTreatmentPairwise(KFACTreatment):
                     'col0_pairs': int(info.get('col0_pairs', 0)),
                     'full_block_J': int(info.get('full_block_J', 0)),
                 }
+
+    # ---------- ablation (removal) method --------------------------------
+
+    def ablate_kfac_by_product(self,
+                               variance_ratio: Union[float,
+                                                     Dict[str, float]]):
+        """
+        Remove a subspace from each registered layer by subtracting
+        the projection onto the largest λ_i μ_j products.
+
+        W_new = W_orig − Σ_{(i,j)∈S} (u_i^T W v_j) · u_i v_j^T
+
+        This is the complement of apply_kfac_by_product: instead of
+        *keeping* the top curvature directions, we *remove* them.
+
+        Use case: ablate capabilities (e.g. eval awareness) by removing
+        the high-curvature subspace learned from a capability-specific corpus.
+
+        variance_ratio
+            Fraction of joint eigenvalue mass to ablate.
+            • 0.1 → surgical removal of top 10% curvature directions
+            • 0.5 → moderate removal
+            • 0.9 → aggressive removal
+        """
+        if isinstance(variance_ratio, float):
+            ratio_map = {name: variance_ratio for name in self.layer_names}
+        else:
+            ratio_map = variance_ratio
+
+        with torch.no_grad():
+            for layer_name in self.layer_names:
+                rho = ratio_map[layer_name]
+                info = self.kfac_info[layer_name]
+
+                eva_G = info['eva_G'].to(self.device)
+                eva_A = info['eva_A'].to(self.device)
+                assert (eva_G[:-1] >= eva_G[1:]).all(), "eva_G must be sorted desc"
+                assert (eva_A[:-1] >= eva_A[1:]).all(), "eva_A must be sorted desc"
+
+                # Step 1: which (i,j) pairs capture rho of the curvature mass?
+                pairs = self._top_pairs_by_product(eva_G, eva_A, rho)
+
+                # Step 2: build projection onto those pairs
+                W_proj = self._project_weight_pairs(info, pairs)
+
+                # Step 3: SUBTRACT the projection → remove those directions
+                W_ablated = info['W_orig'].float() - W_proj
+
+                # Step 4: write back
+                layer = self._get_layer_by_name(layer_name)
+                layer.weight.copy_(W_ablated.to(layer.weight.dtype))
+
+                # Book-keeping
+                k = len(pairs)
+                info_str = f"{layer_name}: ablated {k} pairs ({k / info['W_orig'].numel():.2%})"
+                print(info_str)
+                rect_params = int(info.get('prefix_eig_G', 0)) * int(info.get('prefix_eig_A', 0))
+                orig_params = int(info['W_orig'].numel())
+                self.compression_stats[layer_name] = {
+                    'num_pairs': k,
+                    'pair_ratio': k / info['W_orig'].numel(),
+                    'uniq_G': int(info.get('used_eig_G', 0)),
+                    'uniq_A': int(info.get('used_eig_A', 0)),
+                    'eff95_G': int(info.get('eff95_eig_G', 0)),
+                    'eff95_A': int(info.get('eff95_eig_A', 0)),
+                    'prefix_G': int(info.get('prefix_eig_G', 0)),
+                    'prefix_A': int(info.get('prefix_eig_A', 0)),
+                    'dim_G': int(info['evc_G'].shape[1]),
+                    'dim_A': int(info['evc_A'].shape[1]),
+                    'rho': float(rho),
+                    'mode': 'ablate',
+                    'mass_ratio': float(info.get('mass_ratio', 0.0)),
+                    'rect_params': rect_params,
+                    'rect_ratio': (rect_params / orig_params) if orig_params > 0 else 0.0,
+                }

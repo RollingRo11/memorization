@@ -181,7 +181,8 @@ def apply_kfac_to_layer(model,
                        quiet: bool = True,
                        math_factors_path: str = "",
                        alpha: float = 0.0,
-                       general_factors_dir: str = "") -> None:
+                       general_factors_dir: str = "",
+                       ablate: bool = False) -> None:
     """Apply K-FAC to a single layer's MLP projections."""
     factors_path = get_kfac_factors_path(model_size, layer_idx, general_factors_dir)
     
@@ -224,8 +225,10 @@ def apply_kfac_to_layer(model,
             print(f"  K-FAC {proj_name}_proj (ρ={variance:.3f}): skipping (ρ≈1.0)")
             continue
 
-        # Check cache (update cache key to include alpha and math source if present)
+        # Check cache (update cache key to include alpha, math source, and ablate mode)
         cache_key_suffix = ""
+        if ablate:
+            cache_key_suffix += "__ablate"
         if alpha > 0 and resolved_math_path:
             # Include a short identifier for the math factors to avoid collisions
             math_id = Path(resolved_math_path).parent.name # e.g. allenai__OLMo-2-1124-7B_gsm8k
@@ -255,7 +258,10 @@ def apply_kfac_to_layer(model,
             math_factors_path=resolved_math_path,
             alpha=alpha
         )
-        kfac.apply_kfac_by_product(variance_ratio=variance)
+        if ablate:
+            kfac.ablate_kfac_by_product(variance_ratio=variance)
+        else:
+            kfac.apply_kfac_by_product(variance_ratio=variance)
         # Report how many eigenvectors from G and A were retained
         stats = kfac.compression_stats.get(layer_name, None)
         if stats is not None:
@@ -305,6 +311,9 @@ def main():
                        help="Override: Path to directory containing general K-FAC factors")
     parser.add_argument("--alpha", type=float, default=0.0,
                        help="Mixing coefficient for math factors: combined = general + alpha * math")
+    parser.add_argument("--ablate", action="store_true",
+                       help="Ablation mode: REMOVE the top curvature directions instead of keeping them. "
+                            "Use to unlearn capabilities (e.g. eval awareness).")
 
     # Evaluation settings
     parser.add_argument("--dtype", type=str, choices=["float16", "bfloat16", "float32"],
@@ -437,6 +446,7 @@ def main():
                 math_factors_path=args.math_factors_path,
                 alpha=args.alpha,
                 general_factors_dir=args.general_factors_dir,
+                ablate=args.ablate,
             )
 
     # POST-K-FAC EVALUATION

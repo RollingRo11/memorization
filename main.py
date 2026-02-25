@@ -59,6 +59,9 @@ def main():
     # Mixing / Edit config
     parser.add_argument("--alpha", type=float, default=1.0, help="Mixing strength for math factors")
     parser.add_argument("--variance", type=float, default=0.6, help="Curvature mass to retain (rho)")
+    parser.add_argument("--ablate", action="store_true",
+                        help="Ablation mode: REMOVE the top curvature directions from the domain corpus "
+                             "instead of protecting them. Use to unlearn capabilities (e.g. eval awareness).")
     parser.add_argument("--run-gsm8k", action="store_true", help="Run 3-way GSM8K comparison (Base vs Gen vs Union)")
     parser.add_argument("--skip-evals", action="store_true", help="Skip all evaluations (just apply K-FAC and save model)")
     parser.add_argument("--refresh-cache", action="store_true", help="Force refresh of K-FAC weight cache")
@@ -90,14 +93,14 @@ def main():
     
     layers_json = get_layer_json(args.variance)
 
-    # --- Step 1: Collect General Factors ---
+    # --- Factor Collection ---
     # Robust check: Ensure ALL requested blocks are present in the existing files
     target_blocks_int = set(int(b) for b in args.target_blocks)
-    
+
     def check_missing_blocks(directory, required_blocks):
         if not directory.exists():
             return required_blocks
-        
+
         covered_blocks = set()
         for f in directory.glob("*.pt"):
             try:
@@ -108,39 +111,44 @@ def main():
                         covered_blocks.add(int(p))
             except Exception:
                 continue
-        
+
         return required_blocks - covered_blocks
 
-    missing_gen = check_missing_blocks(gen_dir, target_blocks_int)
-    need_gen = args.force_collect or bool(missing_gen)
-    
-    if not need_gen:
-        print(f"Found factors for all requested blocks in {gen_dir}, skipping collection.")
+    # --- Step 1: Collect General Factors (skip in ablate mode) ---
+    if not args.ablate:
+        missing_gen = check_missing_blocks(gen_dir, target_blocks_int)
+        need_gen = args.force_collect or bool(missing_gen)
+
+        if not need_gen:
+            print(f"Found factors for all requested blocks in {gen_dir}, skipping collection.")
+        else:
+            if missing_gen and not args.force_collect:
+                print(f"Missing general factors for blocks: {missing_gen}. Starting collection...")
+
+        if need_gen:
+            cmd_gen = [
+                sys.executable, "data/collect_kfac_multilayer.py",
+                "--model", args.model,
+                "--device", args.device,
+                "--corpus", args.general_corpus,
+                "--save_dir", str(gen_dir),
+                "--target_blocks", *args.target_blocks,
+                "--layers_per_pass", args.layers_per_pass
+            ]
+            run_command(cmd_gen, "Collect General Factors")
     else:
-        if missing_gen and not args.force_collect:
-            print(f"Missing general factors for blocks: {missing_gen}. Starting collection...")
+        print("Ablate mode: skipping general factor collection.")
 
-    if need_gen:
-        cmd_gen = [
-            sys.executable, "data/collect_kfac_multilayer.py",
-            "--model", args.model,
-            "--device", args.device,
-            "--corpus", args.general_corpus,
-            "--save_dir", str(gen_dir),
-            "--target_blocks", *args.target_blocks,
-            "--layers_per_pass", args.layers_per_pass
-        ]
-        run_command(cmd_gen, "Collect General Factors")
-
-    # --- Step 2: Collect Math Factors ---
+    # --- Step 2: Collect Domain Factors ---
     missing_math = check_missing_blocks(math_dir, target_blocks_int)
     need_math = args.force_collect or bool(missing_math)
-    
+
     if not need_math:
         print(f"Found factors for all requested blocks in {math_dir}, skipping collection.")
     else:
         if missing_math and not args.force_collect:
-            print(f"Missing math factors for blocks: {missing_math}. Starting collection...")
+            corpus_label = "domain" if args.ablate else "math"
+            print(f"Missing {corpus_label} factors for blocks: {missing_math}. Starting collection...")
 
     if need_math:
         cmd_math = [
@@ -152,24 +160,38 @@ def main():
             "--target_blocks", *args.target_blocks,
             "--layers_per_pass", args.layers_per_pass
         ]
-        run_command(cmd_math, "Collect Math Factors")
+        step_label = "Collect Domain Factors (for ablation)" if args.ablate else "Collect Math Factors"
+        run_command(cmd_math, step_label)
 
-    # --- Step 3: Eval with Hessian Union (The "Union" Model) ---
-    
-    cmd_eval = [
-        sys.executable, "evaluations/eval_mem_kfac.py",
-        "--model-size", args.model_size,
-        "--layers-json", layers_json,
-        "--general-factors-dir", str(gen_dir),
-        "--math-factors-path", str(math_dir),
-        "--alpha", str(args.alpha),
-        "--use-cache"
-    ]
-    
+    # --- Step 3: Eval with K-FAC Edit ---
+
+    if args.ablate:
+        # Ablation mode: use domain factors as primary, subtract top curvature directions
+        cmd_eval = [
+            sys.executable, "evaluations/eval_mem_kfac.py",
+            "--model-size", args.model_size,
+            "--layers-json", layers_json,
+            "--general-factors-dir", str(math_dir),  # domain factors as primary
+            "--ablate",
+            "--use-cache"
+        ]
+    else:
+        # Union mode: combine general + domain factors
+        cmd_eval = [
+            sys.executable, "evaluations/eval_mem_kfac.py",
+            "--model-size", args.model_size,
+            "--layers-json", layers_json,
+            "--general-factors-dir", str(gen_dir),
+            "--math-factors-path", str(math_dir),
+            "--alpha", str(args.alpha),
+            "--use-cache"
+        ]
+
     if args.refresh_cache:
         cmd_eval.append("--refresh-cache")
-    
-    run_command(cmd_eval, f"Apply Hessian Union (alpha={args.alpha}) & Evaluate")
+
+    step_desc = "Ablate domain curvature" if args.ablate else f"Apply Hessian Union (alpha={args.alpha})"
+    run_command(cmd_eval, f"{step_desc} & Evaluate")
 
     # --- Step 4: Optional GSM8K Comparison ---
     if args.run_gsm8k:
